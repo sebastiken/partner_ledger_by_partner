@@ -22,7 +22,7 @@
 {
     "name": "partner_ledger_by_partner",
     "version": "1.0",
-    "depends": ["base", "account"],
+    "depends": ["base", "account", "report_openoffice", "report_openoffice_helper"],
     "author": "E-MIPS",
     "category": "Account Modules",
     "description": """

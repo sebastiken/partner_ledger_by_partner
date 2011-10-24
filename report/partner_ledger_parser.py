@@ -1,36 +1,12 @@
 ##############################################################################
-#
-# Copyright (c) 2008-2010 SIA "KN dati". (http://kndati.lv) All Rights Reserved.
-#                    General contacts <info@kndati.lv>
-#
-# WARNING: This program as such is intended to be used by professional
-# programmers who take the whole responsability of assessing all potential
-# consequences resulting from its eventual inadequacies and bugs
-# End users who are looking for a ready-to-use solution with commercial
-# garantees and support are strongly adviced to contract a Free Software
-# Service Company
-#
-# This program is Free Software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-#
+# COPYRIGHT
 ##############################################################################
 
 from report import report_sxw
 from report.report_sxw import rml_parse
-import lorem
 import random
 from datetime import datetime
+from operator import itemgetter
 
 LINES_PER_PAGE = 21
 
@@ -52,28 +28,116 @@ class Parser(report_sxw.rml_parse):
         print 'Ids: ', ids
         super(Parser, self).set_context(objects, data, ids, report_type)
 
+#    def get_moves(self, partner):
+#        full_moves = []
+#
+#        # SQL Query que nos entrega toda la informacion incluido
+#        # informacion del objeto account_invoice
+#        self.cr.execute("SELECT res.*, res.ref, inv.id, inv.number from account_invoice inv RIGHT JOIN " \
+#        "(SELECT l.id, l.move_id, l.date,j.code, l.ref as ref, l.name, l.debit, l.credit " \
+#            "FROM account_move_line l " \
+#            "LEFT JOIN account_journal j " \
+#            "ON (l.journal_id = j.id) " \
+#            "WHERE l.partner_id = %s " \
+#            "AND l.account_id IN (select id from account_account where type in %s) " \
+#            "ORDER BY l.id) res ON (inv.move_id=res.move_id)", (partner.id, ('receivable', 'payable'))) 
+#
+#        res = self.cr.dictfetchall()
+#        sum = 0.0
+#        for r in res:
+#            sum += r['debit'] - r['credit']
+#            date = datetime.strptime(r['date'], report_sxw.DT_FORMAT)
+#            r['progress'] = (sum>0.01 or sum<-0.01) and sum or 0.0
+#            r['date'] = date.strftime('%d/%m/%Y')
+#            full_moves.append(r)
+#
+#        self._totals(partner)
+#
+#        return full_moves
+
     def get_moves(self, partner):
+        receipts = []
         full_moves = []
+        write_off = []
 
-        # SQL Query que nos entrega toda la informacion incluido
-        # informacion del objeto account_invoice
-        self.cr.execute("SELECT res.*, res.ref, inv.id, inv.number from account_invoice inv RIGHT JOIN " \
-        "(SELECT l.id, l.move_id, l.date,j.code, l.ref as ref, l.name, l.debit, l.credit " \
-            "FROM account_move_line l " \
-            "LEFT JOIN account_journal j " \
-            "ON (l.journal_id = j.id) " \
-            "WHERE l.partner_id = %s " \
-            "AND l.account_id IN (select id from account_account where type in %s) " \
-            "ORDER BY l.id) res ON (inv.move_id=res.move_id)", (partner.id, ('receivable', 'payable'))) 
+        debit = 0.0
+        credit = 0.0
+        sum_writeoff = 0.0
 
-        res = self.cr.dictfetchall()
+        rec_obj = self.pool.get('payment.recibos')
+        ids = rec_obj.search(self.cr, self.uid, [('partner_id', '=', partner.id), ('state', '!=', 'draft')])
+
+        print 'Recibos: '
+        for r in rec_obj.browse(self.cr, self.uid, ids):
+            print 'Recibo: ', r.reference, 'Date: ', r.date_done, 'Total: ', r.total, 'Saldo a favor: ', r.saldofavor
+            receipts.append({'name': 'Rec. %s' % r.reference, 'date': r.date_done, 'debit': 0.0, 'credit': r.total})
+            credit = credit + r.total
+
+        ml_obj = self.pool.get('account.move.line')
+        inv_obj = self.pool.get('account.invoice')
+        ids = inv_obj.search(self.cr, self.uid, [('partner_id', '=', partner.id), ('state', 'not in', ['draft', 'cancel'])])
+
+        #print 'Invoices: '
+        for i in inv_obj.browse(self.cr, self.uid, ids):
+            print '\nInvoice: ', i.number, 'Date: ', i.date_invoice, 'Total: ', i.amount_total
+            debit = debit + i.amount_total
+
+            if i.documento == 'factura':
+                name = 'FAC %s' % i.number
+                inv_credit = 0.0
+                inv_debit = i.amount_total
+            elif i.documento == 'nota_credito':
+                name = 'NC %s' % i.number
+                inv_credit = i.amount_total
+                inv_debit = 0.0
+            if i.documento == 'nota_debito':
+                name = 'ND %s' % i.number
+                inv_credit = 0.0
+                inv_debit = i.amount_total
+
+            receipts.append({'name': name, 'date': i.date_invoice, 'debit': inv_debit, 'credit': inv_credit})
+
+            # Pedimos las lineas de asientos que tengan ese move_id y que esten conciliados
+            ml_ids = ml_obj.search(self.cr, self.uid, [('move_id', '=', i.move_id.id), ('reconcile_id', '!=', False)])
+
+            for ml in ml_obj.browse(self.cr, self.uid, ml_ids):
+                #print 'Reconcile: ', ml.reconcile_id.name, i.id, ml.invoice.id, ml.invoice.number
+                reconciled_ids = ml_obj.search(self.cr, self.uid, ['|', ('name', '=', 'Write-Off'), 
+                                                                        ('name', '=', 'Currency Profit/Loss'), 
+                                                                        ('account_id', '=', ml.account_id.id),
+                                                                        ('reconcile_id', '=', ml.reconcile_id.id)])
+
+                for woml in ml_obj.browse(self.cr, self.uid, reconciled_ids):
+                    print woml.name, woml.debit, woml.credit
+                    sum_writeoff += (woml.debit - woml.credit)
+
+        # Las ordenamos por fecha
+        receipt_ordered = sorted(receipts, key=itemgetter('date'))
+
         sum = 0.0
-        for r in res:
-            sum += r['debit'] - r['credit']
-            date = datetime.strptime(r['date'], report_sxw.DT_FORMAT)
-            r['progress'] = (sum>0.01 or sum<-0.01) and sum or 0.0
-            r['date'] = date.strftime('%d/%m/%Y')
-            full_moves.append(r)
+        for l in receipt_ordered:
+            sum += l['debit'] - l['credit']
+            date = datetime.strptime(l['date'], report_sxw.DT_FORMAT)
+            l['progress'] = '%.02f' % ((sum>0.01 or sum<-0.01) and sum or 0.0)
+            l['date'] = date.strftime('%d/%m/%Y')
+            l['debit'] = '%.02f' % l['debit']
+            l['credit'] = '%.02f' % l['credit']
+            full_moves.append(l)
+            print l
+
+        if sum_writeoff:
+            debit = 0.0
+            credit = 0.0
+            sum += sum_writeoff
+            if sum_writeoff < 0:
+                credit = abs(sum_writeoff)
+            else:
+                debit = sum_writeoff
+
+            progress = '%.02f' % ((sum>0.01 or sum<-0.01) and sum or 0.0)
+            full_moves.append({'name': 'Diferencia por redondeo', 'date': '', 'debit': debit, 'credit': credit, 'progress': progress})
+
+            print 'Sum Write-Off: ', sum_writeoff
 
         self._totals(partner)
 
