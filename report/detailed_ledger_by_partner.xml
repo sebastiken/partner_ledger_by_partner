@@ -1,26 +1,26 @@
 <?xml version="1.0"?>
 <openerp>
-<data noupdate="1">
+<data noupdate="0">
 
-    <record id="partner_ledger_byp_report_id" model="ir.actions.report.xml">
-        <field name="name">Partner Ledger</field>
+    <record id="detailed_ledger_byp_report_id" model="ir.actions.report.xml">
+        <field name="name">Detailed Ledger</field>
         <field name="type">ir.actions.report.xml</field>
         <field name="model">res.partner</field>
-        <field name="report_name">partner_ledger</field>
+        <field name="report_name">detailed_ledger</field>
         <field name="report_type">oo-pdf</field>
         <field name="in_format">oo-odt</field>
-        <field name="parser_loc">partner_ledger_by_partner/report/partner_ledger_parser.py</field>
-        <field name="report_rml">partner_ledger_by_partner/report/ledger_template.odt</field>
+        <field name="parser_loc">partner_ledger_by_partner/report/detailed_ledger_parser.py</field>
+        <field name="report_rml">partner_ledger_by_partner/report/detailed_ledger_template.odt</field>
         <field name="parser_state">loc</field>
         <field name="tml_source">file</field>
     </record>
 
-   <ir_set>
+    <ir_set>
         <field eval="'action'" name="key"/>
         <field eval="'client_print_multi'" name="key2"/>
         <field eval="['res.partner']" name="models"/>
-        <field name="name">partner_ledger</field>
-        <field eval="'ir.actions.report.xml,'+str(partner_ledger_byp_report_id)" name="value"/>
+        <field name="name">detailed_ledger</field>
+        <field eval="'ir.actions.report.xml,'+str(detailed_ledger_byp_report_id)" name="value"/>
         <field eval="True" name="isobject"/>
         <field eval="True" name="replace"/>
     </ir_set>

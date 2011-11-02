@@ -23,9 +23,9 @@ class Parser(report_sxw.rml_parse):
         #self.inv_code = '0'
 
     def set_context(self, objects, data, ids, report_type=None):
-        print 'Data: ', data
-        print 'Objects: ', objects
-        print 'Ids: ', ids
+        #print 'Data: ', data
+        #print 'Objects: ', objects
+        #print 'Ids: ', ids
         super(Parser, self).set_context(objects, data, ids, report_type)
 
 #    def get_moves(self, partner):
@@ -65,12 +65,12 @@ class Parser(report_sxw.rml_parse):
         sum_writeoff = 0.0
 
         rec_obj = self.pool.get('payment.recibos')
-        ids = rec_obj.search(self.cr, self.uid, [('partner_id', '=', partner.id), ('state', '!=', 'draft')])
+        ids = rec_obj.search(self.cr, self.uid, [('partner_id', '=', partner.id), ('state', '=', 'done')])
 
-        print 'Recibos: '
+        #print 'Recibos: '
         for r in rec_obj.browse(self.cr, self.uid, ids):
-            print 'Recibo: ', r.reference, 'Date: ', r.date_done, 'Total: ', r.total, 'Saldo a favor: ', r.saldofavor
-            receipts.append({'name': 'Rec. %s' % r.reference, 'date': r.date_done, 'debit': 0.0, 'credit': r.total})
+            #print 'Recibo: ', r.reference, 'Date: ', r.date_done, 'Total: ', r.totalformaspago, 'Saldo a favor: ', r.saldofavor
+            receipts.append({'name': 'Rec. %s' % r.reference, 'date': r.date_done, 'debit': 0.0, 'credit': r.totalformaspago})
             credit = credit + r.total
 
         ml_obj = self.pool.get('account.move.line')
@@ -78,8 +78,9 @@ class Parser(report_sxw.rml_parse):
         ids = inv_obj.search(self.cr, self.uid, [('partner_id', '=', partner.id), ('state', 'not in', ['draft', 'cancel'])])
 
         #print 'Invoices: '
+        woml_ids = []
         for i in inv_obj.browse(self.cr, self.uid, ids):
-            print '\nInvoice: ', i.number, 'Date: ', i.date_invoice, 'Total: ', i.amount_total
+            #print '\nInvoice: ', i.number, 'Date: ', i.date_invoice, 'Total: ', i.amount_total
             debit = debit + i.amount_total
 
             if i.documento == 'factura':
@@ -107,9 +108,13 @@ class Parser(report_sxw.rml_parse):
                                                                         ('account_id', '=', ml.account_id.id),
                                                                         ('reconcile_id', '=', ml.reconcile_id.id)])
 
+                # Esto de chequear si el id esta es medio una chanchada, deberiamos
+                # pensarlo de otra manera.
                 for woml in ml_obj.browse(self.cr, self.uid, reconciled_ids):
-                    print woml.name, woml.debit, woml.credit
-                    sum_writeoff += (woml.debit - woml.credit)
+                    #print woml.id, woml.name, woml.debit, woml.credit
+                    if woml.id not in woml_ids:
+                        woml_ids.append(woml.id)
+                        sum_writeoff += (woml.debit - woml.credit)
 
         # Las ordenamos por fecha
         receipt_ordered = sorted(receipts, key=itemgetter('date'))
@@ -123,7 +128,7 @@ class Parser(report_sxw.rml_parse):
             l['debit'] = '%.02f' % l['debit']
             l['credit'] = '%.02f' % l['credit']
             full_moves.append(l)
-            print l
+            #print l
 
         if sum_writeoff:
             debit = 0.0
@@ -137,7 +142,7 @@ class Parser(report_sxw.rml_parse):
             progress = '%.02f' % ((sum>0.01 or sum<-0.01) and sum or 0.0)
             full_moves.append({'name': 'Diferencia por redondeo', 'date': '', 'debit': debit, 'credit': credit, 'progress': progress})
 
-            print 'Sum Write-Off: ', sum_writeoff
+            #print 'Sum Write-Off: ', sum_writeoff
 
         self._totals(partner)
 
